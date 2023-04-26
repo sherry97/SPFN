@@ -221,8 +221,8 @@ def main():
 			d_deg = 5
 			d_pix = float(d_deg) * np.pi/180 / 0.003
 			camera_trajectory = [d_pix for _ in range(0,360,d_deg)]
-			# custom_draw_geometry_with_camera_trajectory([pcd, *primitives], camera_trajectory, full_output, output_folder='joint')
-			custom_draw_geometry_with_camera_trajectory([pcd], camera_trajectory, full_output, output_folder='pcd_singleprim')
+			custom_draw_geometry_with_camera_trajectory([pcd, *primitives], camera_trajectory, full_output, output_folder='joint')
+			# custom_draw_geometry_with_camera_trajectory([pcd], camera_trajectory, full_output, output_folder='pcd_singleprim')
 			# custom_draw_geometry_with_camera_trajectory(primitives, camera_trajectory, full_output, output_folder='primitives')
 
 

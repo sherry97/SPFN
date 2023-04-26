@@ -9,8 +9,8 @@ import matplotlib
 def labels_to_cm(labels):
 	cm = matplotlib.cm.get_cmap('viridis')
 	unique_labels = sorted(list(np.unique(labels)))
-	# norm_labels = np.array([unique_labels.index(i)/len(unique_labels) for i in labels])
-	norm_labels = np.where(labels==3, 0.99, 0)
+	norm_labels = np.array([unique_labels.index(i)/len(unique_labels) for i in labels])
+	# norm_labels = np.where(labels==3, 0.99, 0)
 	return cm(norm_labels)[:,:3]
 
 def read_pcd(fn):
