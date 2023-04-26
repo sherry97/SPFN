@@ -22,14 +22,14 @@ class PlaneFitter:
         return 'plane'
 
     def insert_prediction_placeholders(pred_ph, n_max_instances):
-        pred_ph['plane_n'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
-        pred_ph['plane_c'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances])
+        pred_ph['plane_n'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
+        pred_ph['plane_c'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances])
 
     def normalize_parameters(parameters):
         parameters['plane_n'] = tf.nn.l2_normalize(parameters['plane_n'], axis=2)
 
     def insert_gt_placeholders(parameters_gt, n_max_instances):
-        parameters_gt['plane_n'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
+        parameters_gt['plane_n'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
 
     def fill_gt_placeholders(feed_dict, parameters_gt, batch):
         feed_dict[parameters_gt['plane_n']] = batch['plane_n_gt']

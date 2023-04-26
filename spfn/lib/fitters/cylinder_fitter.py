@@ -19,16 +19,16 @@ class CylinderFitter:
         return 'cylinder'
 
     def insert_prediction_placeholders(pred_ph, n_max_instances):
-        pred_ph['cylinder_axis'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
-        pred_ph['cylinder_center'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
-        pred_ph['cylinder_radius_squared'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances])
+        pred_ph['cylinder_axis'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
+        pred_ph['cylinder_center'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
+        pred_ph['cylinder_radius_squared'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances])
 
     def normalize_parameters(parameters):
         parameters['cylinder_axis'] = tf.nn.l2_normalize(parameters['cylinder_axis'], axis=2)
         parameters['cylinder_radius_squared'] = tf.clip_by_value(parameters['cylinder_radius_squared'], 1e-4, 1e6)
 
     def insert_gt_placeholders(parameters_gt, n_max_instances):
-        parameters_gt['cylinder_axis'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
+        parameters_gt['cylinder_axis'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
 
     def fill_gt_placeholders(feed_dict, parameters_gt, batch):
         feed_dict[parameters_gt['cylinder_axis']] = batch['cylinder_axis_gt']

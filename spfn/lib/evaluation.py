@@ -22,10 +22,10 @@ def create_gt_dict(n_max_instances):
     '''
     # create gt_dict
     gt_dict = {}
-    gt_dict['instance_per_point'] = tf.placeholder(dtype=tf.int32, shape=[None, None])
-    gt_dict['normal_per_point'] = tf.placeholder(dtype=tf.float32, shape=[None, None, 3])
-    gt_dict['type_per_instance'] = tf.placeholder(dtype=tf.int32, shape=[None, n_max_instances])
-    gt_dict['points_per_instance'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances, None, 3])
+    gt_dict['instance_per_point'] = tf.compat.v1.placeholder(dtype=tf.int32, shape=[None, None])
+    gt_dict['normal_per_point'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, None, 3])
+    gt_dict['type_per_instance'] = tf.compat.v1.placeholder(dtype=tf.int32, shape=[None, n_max_instances])
+    gt_dict['points_per_instance'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances, None, 3])
     gt_dict['parameters'] = {}
     for fitter_cls in fitter_factory.get_all_fitter_classes():
         fitter_cls.insert_gt_placeholders(gt_dict['parameters'], n_max_instances=n_max_instances)
@@ -49,7 +49,7 @@ def nn_filter_W(W, W_null_threshold=0.005):
     n_max_instances = W.get_shape()[2] # n_max_instances should not be dynamic
 
     W_column_sum = tf.reduce_sum(W, axis=1) # BxK
-    null_mask = W_column_sum < tf.to_float(n_points) * W_null_threshold # BxK
+    null_mask = W_column_sum < tf.compat.v1.to_float(n_points) * W_null_threshold # BxK
     null_mask_W_like = tf.tile(tf.expand_dims(null_mask, axis=1), [1, n_points, 1]) # BxNxK
     W = tf.where(null_mask_W_like, tf.zeros_like(W), tf.one_hot(tf.argmax(W, axis=2), depth=n_max_instances, dtype=tf.float32))
 
@@ -100,7 +100,7 @@ def evaluate(pred_dict, gt_dict, is_eval, is_nn, P_in=None):
     n_instances_gt = tf.reduce_max(I_gt, axis=1) + 1 # only count known primitive type instances, as -1 will be ignored
     mask_gt = tf.sequence_mask(n_instances_gt, maxlen=n_max_instances) # BxK, mask_gt[b, k] = 1 iff instace k is present in the ground truth batch b
 
-    matching_indices = tf.stop_gradient(tf.py_func(hungarian_matching, [W, I_gt], Tout=tf.int32)) # BxK
+    matching_indices = tf.stop_gradient(tf.numpy_function(hungarian_matching, [W, I_gt], Tout=tf.int32)) # BxK
     miou_loss = compute_miou_loss(W, I_gt, matching_indices) # losses all have dimension BxK
     normal_loss = compute_normal_loss(pred_dict['normal_per_point'], gt_dict['normal_per_point'], angle_diff=is_eval) # B
     per_point_type_loss = compute_per_point_type_loss(pred_dict['type_per_point'], I_gt, T_gt, is_eval=is_eval) # B
@@ -192,7 +192,7 @@ def calculate_eval_stats(W, matching_indices, mask_gt, P_in, type_per_point, T_g
 
     # for parameter loss w/o gt, only count when the predicted type matches the ground truth type
     instance_matched_mask = tf.equal(T_gt, batched_gather(instance_type, matching_indices, axis=1)) # BxK, boolean
-    per_instance_type_accuracy = reduce_mean_masked_instance(tf.to_float(instance_matched_mask), mask_gt_nulled) # B
+    per_instance_type_accuracy = reduce_mean_masked_instance(tf.compat.v1.to_float(instance_matched_mask), mask_gt_nulled) # B
     parameter_loss_without_gt = reduce_mean_masked_instance(parameter_loss, tf.logical_and(instance_matched_mask, mask_gt_nulled))
 
     result = {
@@ -261,7 +261,7 @@ def reduce_mean_masked_instance(loss, mask_gt):
     # loss: BxK
     loss = tf.where(mask_gt, loss, tf.zeros_like(loss))
     reduced_loss = tf.reduce_sum(loss, axis=1) # B
-    denom = tf.reduce_sum(tf.to_float(mask_gt), axis=1) # B
+    denom = tf.reduce_sum(tf.compat.v1.to_float(mask_gt), axis=1) # B
     return tf.where(denom > 0, reduced_loss / denom, tf.zeros_like(reduced_loss)) # B
 
 def compute_normal_loss(normal, normal_gt, angle_diff):
@@ -296,13 +296,13 @@ def compute_per_point_type_loss(per_point_type, I_gt, T_gt, is_eval):
     indices = tf.stack([indices_0, tf.maximum(0, I_gt)], axis=2)
     per_point_type_gt = tf.gather_nd(T_gt, indices=indices) # BxN
     if is_eval:
-        type_loss = 1.0 - tf.to_float(tf.equal(per_point_type, per_point_type_gt))
+        type_loss = 1.0 - tf.compat.v1.to_float(tf.equal(per_point_type, per_point_type_gt))
     else:
         type_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=per_point_type, labels=per_point_type_gt) # BxN
 
     # do not add loss to background points in gt
     type_loss = tf.where(tf.equal(I_gt, -1), tf.zeros_like(type_loss), type_loss)
-    return tf.reduce_sum(type_loss, axis=1) / tf.to_float(tf.count_nonzero(tf.not_equal(I_gt, -1), axis=1)) # B
+    return tf.reduce_sum(type_loss, axis=1) / tf.compat.v1.to_float(tf.math.count_nonzero(tf.not_equal(I_gt, -1), axis=1)) # B
 
 def hungarian_matching(W_pred, I_gt):
     # This non-tf function does not backprob gradient, only output matching indices

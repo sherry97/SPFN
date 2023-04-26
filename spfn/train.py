@@ -18,7 +18,7 @@ import json
 import argparse
 
 if __name__ == '__main__':
-    tf.set_random_seed(1234)
+    tf.random.set_seed(1234)
     np.random.seed(1234)
     random.seed(1234)
     register_custom_svd_gradient()
@@ -43,7 +43,7 @@ if __name__ == '__main__':
     batch_size = conf.get_batch_size()
     n_max_instances = conf.get_n_max_instances()
 
-    tf_conf = tf.ConfigProto()
+    tf_conf = tf.compat.v1.ConfigProto()
     tf_conf.allow_soft_placement = True
     tf_conf.gpu_options.allow_growth = True
 
@@ -53,17 +53,17 @@ if __name__ == '__main__':
 
     print('Building network...')
     net = Network(n_max_instances=n_max_instances, config=conf, is_new_training=not should_restore)
-    with tf.Session(config=tf_conf, graph=net.graph) as sess:
+    with tf.compat.v1.Session(config=tf_conf, graph=net.graph) as sess:
         if conf.is_debug_mode():
             sess = tf_debug.LocalCLIDebugWrapperSession(sess)
 
         if should_restore:
             print('Restoring ' + ckpt.model_checkpoint_path + ' ...')
-            tf.train.Saver().restore(sess, ckpt.model_checkpoint_path)
+            tf.compat.v1.train.Saver().restore(sess, ckpt.model_checkpoint_path)
         else:
             assert not is_testing
             print('Starting a new training...')
-            sess.run(tf.global_variables_initializer())
+            sess.run(tf.compat.v1.global_variables_initializer())
 
         print('Loading data...')
         if is_testing:

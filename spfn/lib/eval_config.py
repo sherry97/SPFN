@@ -2,7 +2,7 @@ import yaml
 
 class EvalConfig(object):
     def __init__(self, filename):
-        self.conf = yaml.load(open(filename, 'r'))
+        self.conf = yaml.safe_load(open(filename, 'r'))
 
     def fetch(self, name, default_value=None):
         result = self.conf.get(name, default_value)

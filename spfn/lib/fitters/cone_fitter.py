@@ -19,16 +19,16 @@ class ConeFitter:
         return 'cone'
 
     def insert_prediction_placeholders(pred_ph, n_max_instances):
-        pred_ph['cone_axis'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
-        pred_ph['cone_apex'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
-        pred_ph['cone_half_angle'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances])
+        pred_ph['cone_axis'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
+        pred_ph['cone_apex'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
+        pred_ph['cone_half_angle'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances])
 
     def normalize_parameters(parameters):
         parameters['cone_axis'] = tf.nn.l2_normalize(parameters['cone_axis'], axis=2)
         parameters['cone_half_angle'] = tf.clip_by_value(parameters['cone_half_angle'], 1e-4, PI / 2 - 1e-4)
 
     def insert_gt_placeholders(parameters_gt, n_max_instances):
-        parameters_gt['cone_axis'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
+        parameters_gt['cone_axis'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
 
     def fill_gt_placeholders(feed_dict, parameters_gt, batch):
         feed_dict[parameters_gt['cone_axis']] = batch['cone_axis_gt']
@@ -55,7 +55,7 @@ class ConeFitter:
         P_minus_apex_normalized_dot_axis = tf.reduce_sum(tf.expand_dims(axis, axis=1) * P_minus_apex_normalized, axis=3) # BxNxK
         # flip direction of axis if wrong
         sgn_axis = tf.sign(tf.reduce_sum(W * P_minus_apex_normalized_dot_axis, axis=1)) # BxK
-        sgn_axis += tf.to_float(tf.equal(sgn_axis, 0.0)) # prevent sgn == 0
+        sgn_axis += tf.compat.v1.to_float(tf.equal(sgn_axis, 0.0)) # prevent sgn == 0
         axis *= tf.expand_dims(sgn_axis, axis=2) # BxKx3
 
         tmp = W * acos_safe(tf.abs(P_minus_apex_normalized_dot_axis)) # BxNxK

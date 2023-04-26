@@ -18,8 +18,8 @@ class SphereFitter:
         return 'sphere'
 
     def insert_prediction_placeholders(pred_ph, n_max_instances):
-        pred_ph['sphere_center'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
-        pred_ph['sphere_radius_squared'] = tf.placeholder(dtype=tf.float32, shape=[None, n_max_instances])
+        pred_ph['sphere_center'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances, 3])
+        pred_ph['sphere_radius_squared'] = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, n_max_instances])
 
     def normalize_parameters(parameters):
         parameters['sphere_radius_squared'] = tf.clip_by_value(parameters['sphere_radius_squared'], 1e-4, 1e6)

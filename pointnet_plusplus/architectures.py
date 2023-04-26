@@ -8,7 +8,7 @@ import tensorflow as tf
 import tf_util
 
 def build_pointnet2_seg(scope, X, out_dims, is_training, bn_decay):
-    with tf.variable_scope(scope):
+    with tf.compat.v1.variable_scope(scope):
         l0_xyz = tf.slice(X, [0,0,0], [-1,-1,3])
         l0_points = tf.slice(X, [0,0,3], [-1,-1,0])
 
@@ -54,7 +54,7 @@ def build_pointnet2_seg(scope, X, out_dims, is_training, bn_decay):
         return results
 
 def build_pointnet2_cls(scope, point_cloud, out_dims, is_training, bn_decay):
-    with tf.variable_scope(scope):
+    with tf.compat.v1.variable_scope(scope):
         batch_size = tf.shape(point_cloud)[0]
         l0_xyz = point_cloud
         l0_points = None

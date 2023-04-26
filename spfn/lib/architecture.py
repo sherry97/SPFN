@@ -24,7 +24,7 @@ def get_per_point_model(scope, P, n_max_instances, is_training, bn_decay):
     '''
 
     n_registered_primitives = fitter_factory.get_n_registered_primitives()
-    with tf.variable_scope(scope):
+    with tf.compat.v1.variable_scope(scope):
         net_results = build_pointnet2_seg('est_net', X=P, out_dims=[n_max_instances, 3, n_registered_primitives], is_training=is_training, bn_decay=bn_decay)
         W, normal_per_point, type_per_point = net_results
     W = tf.nn.softmax(W, axis=2) # BxNxK

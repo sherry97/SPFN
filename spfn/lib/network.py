@@ -23,8 +23,8 @@ class Network(object):
         with self.graph.as_default():
             self.global_step = tf.Variable(0)
 
-            self.is_training = tf.placeholder(dtype=tf.bool, shape=[])
-            self.P = tf.placeholder(dtype=tf.float32, shape=[None, None, 3])
+            self.is_training = tf.compat.v1.placeholder(dtype=tf.bool, shape=[])
+            self.P = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, None, 3])
             self.batch_size = tf.shape(self.P)[0]
 
             if config.get_bn_decay_step() < 0:
@@ -76,16 +76,16 @@ class Network(object):
                 config.get_decay_rate())
             tf.summary.scalar('learning_rate', learning_rate)
 
-            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
             with tf.control_dependencies(update_ops):
                 self.train_op = self.create_train_op(learning_rate, self.total_loss)
 
-            self.summary = tf.summary.merge_all()
-            self.saver = tf.train.Saver(max_to_keep=3)
+            # self.summary = tf.compat.v1.summary.merge_all()
+            self.saver = tf.compat.v1.train.Saver(max_to_keep=3)
 
     def create_train_op(self, learning_rate, total_loss):
         # Skip gradient update if any gradient is infinite. This should not happen and is for debug only.
-        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
         self.optimizer = optimizer
         grads_and_vars = optimizer.compute_gradients(total_loss)
         grads = [g for g, v in grads_and_vars]
@@ -93,14 +93,14 @@ class Network(object):
         is_finite = tf.ones(dtype=tf.bool, shape=[])
         for g, v in grads_and_vars:
             if g is not None:
-                g_is_finite = tf.reduce_any(tf.is_finite(g))
-                g_is_finite_cond = tf.cond(g_is_finite, tf.no_op, lambda: tf.Print(g_is_finite, [g], '{} is not finite:'.format(str(g))))
+                g_is_finite = tf.reduce_any(tf.math.is_finite(g))
+                g_is_finite_cond = tf.cond(g_is_finite, tf.no_op, lambda: tf.print(g_is_finite, [g], '{} is not finite:'.format(str(g))))
                 with tf.control_dependencies([g_is_finite_cond]):
                     is_finite = tf.logical_and(is_finite, g_is_finite)
         train_op = tf.cond(
             is_finite, 
             lambda: optimizer.apply_gradients(zip(grads, varnames), global_step=self.global_step), 
-            lambda: tf.Print(is_finite, [is_finite], 'Some gradients are not finite! Skipping gradient backprop.')
+            lambda: tf.print(is_finite, [is_finite], 'Some gradients are not finite! Skipping gradient backprop.')
         )
         return train_op
 
@@ -151,8 +151,8 @@ class Network(object):
     def train(self, sess, train_data, val_data, n_epochs, val_interval, snapshot_interval, model_dir, log_dir):
         assert n_epochs > 0
 
-        train_writer = tf.summary.FileWriter(os.path.join(log_dir, 'train'), sess.graph)
-        val_writer = tf.summary.FileWriter(os.path.join(log_dir, 'val'), sess.graph)
+        train_writer = tf.summary.create_file_writer(os.path.join(log_dir, 'train'))
+        val_writer = tf.summary.create_file_writer(os.path.join(log_dir, 'val'))
         if not os.path.exists(model_dir): 
             os.makedirs(model_dir)
         if not os.path.exists(self.config.get_val_prediction_dir()):
@@ -162,31 +162,35 @@ class Network(object):
         start_time = time.time()
         for epoch in range(1, n_epochs + 1):
             for batch in train_data.create_iterator():
-                feed_dict = self.create_feed_dict(batch, is_training=True)
-                step, _, summary, loss = sess.run([self.global_step, self.train_op, self.summary, self.total_loss], feed_dict=feed_dict)
 
-                elapsed_min = (time.time() - start_time) / 60
-                print('Epoch: {:d} | Step: {:d} | Batch Loss: {:6f} | Elapsed: {:.2f}m'.format(epoch, step, loss, elapsed_min))
+                with train_writer.as_default(step=self.global_step):
+                    feed_dict = self.create_feed_dict(batch, is_training=True)
+                    step, _, loss = sess.run([self.global_step, self.train_op, self.total_loss], feed_dict=feed_dict)
 
-                if step >= self.config.get_writer_start_step():
-                    train_writer.add_summary(summary, step)
+                    elapsed_min = (time.time() - start_time) / 60
+                    print('Epoch: {:d} | Step: {:d} | Batch Loss: {:6f} | Elapsed: {:.2f}m'.format(epoch, step, loss, elapsed_min))
+
+                # if step >= self.config.get_writer_start_step():
+                #     train_writer.add_summary(summary, step)
             
                 if step % val_interval == 0:
                     print('Start validating...')
                     msg = 'Epoch: {:d} | Step: {:d}'.format(epoch, step)
 
-                    remain_min = (n_epochs * train_data.n_data - step) * elapsed_min / step
+                    remain_min = (n_epochs * train_data.n_data - step) * elapsed_min / (step+1)
 
-                    predict_result = self.predict_and_save(sess, val_data, save_dir=os.path.join(self.config.get_val_prediction_dir(), 'step{}'.format(step)))
-                    msg = predict_result['msg']
-                    msg = 'Validation: ' + msg + ' | Elapsed: {:.2f}m, Remaining: {:.2f}m'.format(elapsed_min, remain_min)
-                    print(msg)
-                    # clean up old predictions
-                    prediction_n_keep = self.config.get_val_prediction_n_keep()
-                    if prediction_n_keep != -1:
-                        self.clean_predictions_earlier_than(step=step, prediction_dir=self.config.get_val_prediction_dir(), n_keep=prediction_n_keep)
-                    if step >= self.config.get_writer_start_step():
-                        val_writer.add_summary(predict_result['summary'], step)
+                    with val_writer.as_default(step=step):
+
+                        predict_result = self.predict_and_save(sess, val_data, save_dir=os.path.join(self.config.get_val_prediction_dir(), 'step{}'.format(step)))
+                        msg = predict_result['msg']
+                        msg = 'Validation: ' + msg + ' | Elapsed: {:.2f}m, Remaining: {:.2f}m'.format(elapsed_min, remain_min)
+                        print(msg)
+                        # clean up old predictions
+                        prediction_n_keep = self.config.get_val_prediction_n_keep()
+                        if prediction_n_keep != -1:
+                            self.clean_predictions_earlier_than(step=step, prediction_dir=self.config.get_val_prediction_dir(), n_keep=prediction_n_keep)
+                        #if step >= self.config.get_writer_start_step():
+                            #val_writer.add_summary(predict_result['summary'], step)
                 
                 if step % snapshot_interval == 0:
                     print('Saving snapshot at step {:d}...'.format(step))
@@ -259,12 +263,11 @@ class Network(object):
         losses.update((x, y / dset.n_data) for x, y in losses.items())
         msg = self.format_loss_result(losses)
         open(os.path.join(save_dir, 'test_loss.txt'), 'w').write(msg)
-        summary = tf.Summary()
         for x, y in losses.items():
-            summary.value.add(tag=x, simple_value=y)
+            tf.summary.scalar(x, y)
         return {
             'msg': msg,
-            'summary': summary,
+            #'summary': tf.summary,
         }
 
     def simple_predict_and_save(self, sess, pc, pred_h5_file):
@@ -293,7 +296,7 @@ class Network(object):
         BN_DECAY_RATE = 0.5
         BN_DECAY_CLIP = 0.99
 
-        bn_momentum = tf.train.exponential_decay(
+        bn_momentum = tf.compat.v1.train.exponential_decay(
             BN_INIT_DECAY,
             global_step*batch_size,
             bn_decay_step,
@@ -304,7 +307,7 @@ class Network(object):
         return bn_decay
 
     def get_learning_rate(self, init_learning_rate, global_step, batch_size, decay_step, decay_rate):
-        learning_rate = tf.train.exponential_decay(
+        learning_rate = tf.compat.v1.train.exponential_decay(
             init_learning_rate,
             global_step*batch_size,
             decay_step,

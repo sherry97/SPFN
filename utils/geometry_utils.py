@@ -14,7 +14,7 @@ def compute_consistent_plane_frame(normal):
     y_axes = []
     for tmp_axis in candidate_axes:
         tf_axis = tf.tile(tf.expand_dims(tf.constant(dtype=tf.float32, value=tmp_axis), axis=0), [batch_size, 1]) # Bx3
-        y_axes.append(tf.cross(normal, tf_axis))
+        y_axes.append(tf.linalg.cross(normal, tf_axis))
     y_axes = tf.stack(y_axes, axis=0) # QxBx3
     y_axes_norm = tf.norm(y_axes, axis=2) # QxB
     # choose the axis with largest norm
@@ -25,11 +25,8 @@ def compute_consistent_plane_frame(normal):
     indices_2 = tf.tile(tf.expand_dims(tf.range(3), axis=0), [batch_size, 1]) # Bx3
     indices = tf.stack([tf.cast(indices_0, tf.int32), indices_1, indices_2], axis=2) # Bx3x3
     y_axes = tf.gather_nd(y_axes, indices=indices) # Bx3
-    if tf.VERSION == '1.4.1':
-        y_axes = tf.nn.l2_normalize(y_axes, dim=1)
-    else:
-        y_axes = tf.nn.l2_normalize(y_axes, axis=1)
-    x_axes = tf.cross(y_axes, normal) # Bx3
+    y_axes = tf.nn.l2_normalize(y_axes, axis=1)
+    x_axes = tf.linalg.cross(y_axes, normal) # Bx3
 
     return x_axes, y_axes
 
@@ -83,9 +80,9 @@ def guarded_matrix_solve_ls(A, b, W, condition_number_cap=1e5):
     b *= tf.expand_dims(sqrt_W, axis=2) # BxNx1
     # Compute singular value, trivializing the problem when condition number is too large
     AtA = tf.matmul(a=A, b=A, transpose_a=True)
-    s, _, _ = [tf.stop_gradient(u) for u in tf.svd(AtA)] # s will be BxD
+    s, _, _ = [tf.stop_gradient(u) for u in tf.linalg.svd(AtA)] # s will be BxD
     mask = tf.less(s[:, 0] / s[:, -1], condition_number_cap) # B
-    A *= tf.to_float(tf.expand_dims(tf.expand_dims(mask, axis=1), axis=2)) # zero out badly conditioned data
-    x = tf.matrix_solve_ls(A, b, l2_regularizer=LS_L2_REGULARIZER, fast=True) # BxDx1 
+    A *= tf.compat.v1.to_float(tf.expand_dims(tf.expand_dims(mask, axis=1), axis=2)) # zero out badly conditioned data
+    x = tf.linalg.lstsq(A, b, l2_regularizer=LS_L2_REGULARIZER, fast=True) # BxDx1 
     return tf.squeeze(x, axis=2) # BxD
 

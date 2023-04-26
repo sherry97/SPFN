@@ -43,22 +43,22 @@ if __name__ == '__main__':
     if not os.path.exists(bundle_dir):
         os.makedirs(bundle_dir)
 
-    tf_conf = tf.ConfigProto()
+    tf_conf = tf.compat.v1.ConfigProto()
     tf_conf.allow_soft_placement = True
     tf_conf.gpu_options.allow_growth = True
 
     graph = tf.Graph()
     with graph.as_default():
         pred_ph = {}
-        pred_ph['W'] = tf.placeholder(shape=[None, None, n_max_instances], dtype=tf.float32)
-        pred_ph['normal_per_point'] = tf.placeholder(shape=[None, None, 3], dtype=tf.float32)
-        pred_ph['type_per_point'] = tf.placeholder(shape=[None, None], dtype=tf.int32) # should be BxN in test
+        pred_ph['W'] = tf.compat.v1.placeholder(shape=[None, None, n_max_instances], dtype=tf.float32)
+        pred_ph['normal_per_point'] = tf.compat.v1.placeholder(shape=[None, None, 3], dtype=tf.float32)
+        pred_ph['type_per_point'] = tf.compat.v1.placeholder(shape=[None, None], dtype=tf.int32) # should be BxN in test
         pred_ph['parameters'] = {}
         for fitter_cls in fitter_factory.get_all_fitter_classes():
             fitter_cls.insert_prediction_placeholders(pred_ph['parameters'], n_max_instances)
 
         gt_ph = evaluation.create_gt_dict(n_max_instances)
-        P_in = tf.placeholder(shape=[None, None, 3], dtype=tf.float32)
+        P_in = tf.compat.v1.placeholder(shape=[None, None, 3], dtype=tf.float32)
         eval_result_node = evaluation.evaluate(pred_ph, gt_ph, is_eval=True, is_nn=conf.is_nn(), P_in=P_in)
 
     stats = {
@@ -72,7 +72,7 @@ if __name__ == '__main__':
         'parameter_loss_without_gt': 0.0,
     }
     # Finish building evaluation graph. Start to run evaluations...
-    with tf.Session(config=tf_conf, graph=graph) as sess:
+    with tf.compat.v1.Session(config=tf_conf, graph=graph) as sess:
         for batch in test_data.create_iterator():
             feed_dict = {}
             feed_dict[P_in] = batch['P']
