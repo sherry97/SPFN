@@ -1,7 +1,7 @@
 adapted from [Supervised Fitting of Geometric Primitives to 3D Point Clouds](https://github.com/lingxiaoli94/SPFN)
 
 # Environment setup
-Install environment.yml with conda. May need to add tensorrt to `LD_LIBRARY_PATH by appending to end of file:
+Install environment.yml with conda. May need to add tensorrt to `LD_LIBRARY_PATH` by appending to end of file:
 ```
 variables:
   LD_LIBRARY_PATH: /path/to/conda-env/lib/python3.x/site-packages/tensorrt/
