@@ -76,15 +76,31 @@ def load_params_from_file(fn, metadata=''):
 				obj_params['cone_height'] = max_height
 				obj_params['cone_bbox'] = bbox
 			elif index_to_name[primtype] == 'plane':
-				plane_pcd = o3d.geometry.PointCloud()
-				plane_pcd.points = o3d.utility.Vector3dVector(member_pts)
-				obj_params['plane_pcd'] = plane_pcd
 				obj_params['plane_alpha'] = 0.5
+			obj_pcd = o3d.geometry.PointCloud()
+			obj_pcd.points = o3d.utility.Vector3dVector(member_pts)
+			obj_params['obj_pcd'] = obj_pcd
+			obj_params['obj_npts'] = member_pts.shape[0]
 			params_per_instance[instance] = obj_params
 
 			# print(instance, index_to_name[primtype], obj_params)
 
 	return params_per_instance, type_per_instance, index_to_name
+
+
+def distance(pcd, mesh, n_pts=8000):
+	'''
+	Measure Chamfer distance between mesh and pcd
+
+	Input:	pcd 	-	open3d PointCloud
+			mesh 	-	open3d TriangleMesh
+			n_pts 	-	points to sample from mesh for point cloud conversion (int)
+
+	Output: mean (float), median (float)
+	'''
+	mesh_pcd = mesh.sample_points_uniformly(number_of_points=n_pts)
+	dist = np.array(pcd.compute_point_cloud_distance(mesh_pcd))
+	return np.mean(dist), np.median(dist)
 
 def rotation_from_primitive_axis(axis):
 	'''
@@ -98,9 +114,10 @@ def rotation_from_primitive_axis(axis):
 	result, _ = cv2.Rodrigues(v)
 	return result
 
-def render_primitives(params_per_instance, type_per_instance, index_to_name):
+def generate_primitives(params_per_instance, type_per_instance, index_to_name):
 	all_geometry = []
 	cm = plt.cm.viridis
+	weighted_mean, weighted_median, total_pts = 0, 0, 0
 	for i,instance in enumerate(type_per_instance.keys()):
 		# if instance != 3: continue
 		primtype = type_per_instance[instance]
@@ -123,13 +140,22 @@ def render_primitives(params_per_instance, type_per_instance, index_to_name):
 			tip = np.array(params['cone_apex']).reshape(3,1) - np.matmul(rot, np.array([0,0,height]).reshape(3,1))
 			geom.translate(tip)
 		elif index_to_name[primtype] == 'plane':
-			geom = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(params['plane_pcd'], params['plane_alpha'])
+			geom = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(params['obj_pcd'], params['plane_alpha'])
 		elif index_to_name[primtype] == 'sphere':
 			geom = o3d.geometry.TriangleMesh.create_sphere(radius=np.sqrt(params['sphere_radius_squared']))
 			geom.translate(params['sphere_center'])
 		geom.compute_vertex_normals()
 		geom.paint_uniform_color(cm(i/len(type_per_instance.keys()))[:3])
 		all_geometry.append(geom)
+
+		# compute constituent distances
+		n_pts = params['obj_npts']
+		total_pts += n_pts
+		mean, median = distance(params['obj_pcd'], geom, n_pts=n_pts)
+		# print(f'   {instance:>2}\t\tmean: {mean:>.4}\tmedian: {median:>.4}')
+		weighted_mean += mean * n_pts
+		weighted_median += median * n_pts
+	print(f'weighted\tmean: {weighted_mean / total_pts:>.4}\tmedian: {weighted_mean / total_pts:>.4}')
 
 	# DEBUG ONLY
 	# base_geom = o3d.geometry.TriangleMesh.create_sphere(radius=0.1)
@@ -161,10 +187,6 @@ def custom_draw_geometry_with_camera_trajectory(geometries, all_pos, output_path
 			print("Capture image {:05d}".format(glb.index))
 			image = vis.capture_screen_float_buffer(False)
 			depth = vis.capture_depth_float_buffer(False)
-			# plt.imsave(os.path.join(image_path, '{:05d}.png'.format(glb.index)),
-			# 			np.asarray(image), dpi=1)
-			# plt.imsave(os.path.join(depth_path, '{:05d}.png'.format(glb.index)),
-			# 			np.asarray(depth), dpi=1)
 
 			plt.figure()
 			# plt.subplot(121)
@@ -176,7 +198,6 @@ def custom_draw_geometry_with_camera_trajectory(geometries, all_pos, output_path
 			plt.tight_layout()
 			plt.savefig(os.path.join(joint_path, '{:05d}.png'.format(glb.index)))
 			plt.close()
-		# vis.capture_screen_image("image/{:05d}.png".format(glb.index), False)
 		glb.index = glb.index + 1
 		if glb.index < len(glb.rot):
 			ctr.rotate(glb.rot[glb.index], 0.0)
@@ -190,7 +211,6 @@ def custom_draw_geometry_with_camera_trajectory(geometries, all_pos, output_path
 	vis.create_window()
 	for g in geometries:
 		vis.add_geometry(g)
-	# vis.get_render_option().load_from_json(render_option_path)
 	vis.register_animation_callback(move_forward)
 	vis.run()
 	vis.destroy_window()
@@ -200,20 +220,35 @@ def main():
 	parser.add_argument('--files', type=str, help='Files to load and render (glob style)')
 	parser.add_argument('--metadata', type=str, default='', help='File from which to load metadata')
 	parser.add_argument('--output', type=str, default='', help='Output 3D rotation rendering')
-	parser.add_argument('--render', action='store_true')
+	parser.add_argument('--comp_alpha', action='store_true', help='Compute pcd distance from alpha shape')
+	parser.add_argument('--render_interactive', action='store_true', help='Render interactive display')
+	parser.add_argument('--render', action='store_true', help='Render visualization (non-interactive)')
 	args = parser.parse_args()
 
 	for fn in glob.glob(args.files):
 		_, basename = os.path.split(fn)
 		basename = basename[:-len('_bundle.h5')]
+		print(basename)
 		_, pcd = read_pcd(fn)
 		ppi, tpi, itn = load_params_from_file(fn, args.metadata)
-		primitives = render_primitives(ppi, tpi, itn)
+		primitives = generate_primitives(ppi, tpi, itn)
 
-		if args.render:
+		if args.render_interactive:
 			o3d.visualization.draw_geometries([pcd, *primitives])
 
-		if len(args.output) > 0:
+		if args.comp_alpha:
+			hull, _ = pcd.compute_convex_hull(joggle_inputs=True)
+			alpha_mean, alpha_med = distance(pcd, hull)
+
+			print('-'*25)
+			print(f'  alpha\t\tmean: {alpha_mean:>.4}\tmedian: {alpha_med:>.4}')
+			print('-'*25)
+			print('-'*25)
+
+			if args.render_interactive:
+				o3d.visualization.draw_geometries([pcd, hull])
+
+		if args.render and len(args.output) > 0:
 			full_output = os.path.join(args.output, basename)
 			if not os.path.isdir(full_output):
 				os.makedirs(full_output)
