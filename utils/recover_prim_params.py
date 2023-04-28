@@ -8,6 +8,9 @@ import glob
 from scipy import stats, optimize
 import matplotlib.pyplot as plt
 import pickle
+import pandas as pd
+import pymeshfix
+import pyvista as pv
 
 from meshvis import read_pcd
 
@@ -87,20 +90,46 @@ def load_params_from_file(fn, metadata=''):
 
 	return params_per_instance, type_per_instance, index_to_name
 
+def make_watertight(mesh):
+	'''
+	Use pymeshfix to close gaps in mesh, return pyvista.PolyData
+	'''
+	if isinstance(mesh, o3d.geometry.PointCloud):
+		pc = pv.PolyData(np.asarray(mesh.points))
+		surf = pc.reconstruct_surface()
+		mf = pymeshfix.MeshFix(surf)
+	else:
+		# mf = pymeshfix.MeshFix(np.asarray(mesh.vertices), np.asarray(mesh.triangles))
+		pc = pv.PolyData(np.asarray(mesh.vertices))
+		surf = pc.reconstruct_surface()
+		mf = pymeshfix.MeshFix(surf)
+	mf.repair()
+	repaired = mf.mesh
+	assert repaired.is_all_triangles, f'Non-triangular mesh after repair'
 
-def distance(pcd, mesh, n_pts=8000):
+	return repaired
+
+def distance(pcd, mesh, alpha=10):
 	'''
 	Measure Chamfer distance between mesh and pcd
 
 	Input:	pcd 	-	open3d PointCloud
 			mesh 	-	open3d TriangleMesh
-			n_pts 	-	points to sample from mesh for point cloud conversion (int)
+			alpha 	-	sampling rate multiplier
 
-	Output: mean (float), median (float)
+	Output: float
 	'''
-	mesh_pcd = mesh.sample_points_uniformly(number_of_points=n_pts)
-	dist = np.array(pcd.compute_point_cloud_distance(mesh_pcd))
-	return np.mean(dist), np.median(dist)
+	n_vertices = np.asarray(mesh.vertices).shape[0]
+	mesh_pcd = mesh.sample_points_uniformly(number_of_points=n_vertices*alpha)
+	dist = np.asarray(pcd.compute_point_cloud_distance(mesh_pcd))
+	return np.mean(dist)
+
+def get_bbox(pcd):
+	o_bbox = pcd.get_oriented_bounding_box()
+	bbox = o3d.geometry.PointCloud()
+	bbox.points = o_bbox.get_box_points()
+	bbox,_ = bbox.compute_convex_hull()
+	return bbox
 
 def rotation_from_primitive_axis(axis):
 	'''
@@ -117,7 +146,7 @@ def rotation_from_primitive_axis(axis):
 def generate_primitives(params_per_instance, type_per_instance, index_to_name):
 	all_geometry = []
 	cm = plt.cm.viridis
-	weighted_mean, weighted_median, total_pts = 0, 0, 0
+	chamfer = []
 	for i,instance in enumerate(type_per_instance.keys()):
 		# if instance != 3: continue
 		primtype = type_per_instance[instance]
@@ -148,21 +177,15 @@ def generate_primitives(params_per_instance, type_per_instance, index_to_name):
 		geom.paint_uniform_color(cm(i/len(type_per_instance.keys()))[:3])
 		all_geometry.append(geom)
 
-		# compute constituent distances
-		n_pts = params['obj_npts']
-		total_pts += n_pts
-		mean, median = distance(params['obj_pcd'], geom, n_pts=n_pts)
-		# print(f'   {instance:>2}\t\tmean: {mean:>.4}\tmedian: {median:>.4}')
-		weighted_mean += mean * n_pts
-		weighted_median += median * n_pts
-	print(f'weighted\tmean: {weighted_mean / total_pts:>.4}\tmedian: {weighted_mean / total_pts:>.4}')
+		bbox = get_bbox(params['obj_pcd'])
+		chamfer.append([distance(params['obj_pcd'], geom), distance(params['obj_pcd'], bbox)])
 
 	# DEBUG ONLY
 	# base_geom = o3d.geometry.TriangleMesh.create_sphere(radius=0.1)
 	# base_geom.paint_uniform_color([1,0,0])
 	# all_geometry.append(base_geom)
-
-	return all_geometry
+	chamfer = np.array(chamfer)
+	return all_geometry, chamfer
 
 def custom_draw_geometry_with_camera_trajectory(geometries, all_pos, output_path, output_folder="joint"):
 	custom_draw_geometry_with_camera_trajectory.index = -1
@@ -220,10 +243,11 @@ def main():
 	parser.add_argument('--files', type=str, help='Files to load and render (glob style)')
 	parser.add_argument('--metadata', type=str, default='', help='File from which to load metadata')
 	parser.add_argument('--output', type=str, default='', help='Output 3D rotation rendering')
-	parser.add_argument('--comp_alpha', action='store_true', help='Compute pcd distance from alpha shape')
 	parser.add_argument('--render_interactive', action='store_true', help='Render interactive display')
 	parser.add_argument('--render', action='store_true', help='Render visualization (non-interactive)')
 	args = parser.parse_args()
+
+	name_index, data, alpha_mean, alpha_median, alpha_vol = [], [], [], [], []
 
 	for fn in glob.glob(args.files):
 		_, basename = os.path.split(fn)
@@ -231,22 +255,21 @@ def main():
 		print(basename)
 		_, pcd = read_pcd(fn)
 		ppi, tpi, itn = load_params_from_file(fn, args.metadata)
-		primitives = generate_primitives(ppi, tpi, itn)
+		primitives, chamfer = generate_primitives(ppi, tpi, itn)
+
+		chamfer_mean = np.mean(chamfer[:,0])
+		chamfer_med = np.median(chamfer[:,0])
+		boxprim_mean = np.mean(chamfer[:,1])
+		boxprim_med = np.median(chamfer[:,1])
+		# general bbox
+		bbox = get_bbox(pcd)
+		baseline = distance(pcd, bbox)
+		data.append([chamfer_mean, chamfer_med, boxprim_mean, boxprim_med, baseline])
+		name_index.append(basename)
+		print(f'mean: {chamfer_mean:>.4}\tmedian: {chamfer_med:>.4}\tbox mean: {boxprim_mean:>.4}\tbox median: {boxprim_med:>.4}\tbaseline: {baseline:>.4}')
 
 		if args.render_interactive:
 			o3d.visualization.draw_geometries([pcd, *primitives])
-
-		if args.comp_alpha:
-			hull, _ = pcd.compute_convex_hull(joggle_inputs=True)
-			alpha_mean, alpha_med = distance(pcd, hull)
-
-			print('-'*25)
-			print(f'  alpha\t\tmean: {alpha_mean:>.4}\tmedian: {alpha_med:>.4}')
-			print('-'*25)
-			print('-'*25)
-
-			if args.render_interactive:
-				o3d.visualization.draw_geometries([pcd, hull])
 
 		if args.render and len(args.output) > 0:
 			full_output = os.path.join(args.output, basename)
@@ -259,6 +282,14 @@ def main():
 			custom_draw_geometry_with_camera_trajectory([pcd, *primitives], camera_trajectory, full_output, output_folder='joint')
 			# custom_draw_geometry_with_camera_trajectory([pcd], camera_trajectory, full_output, output_folder='pcd_singleprim')
 			# custom_draw_geometry_with_camera_trajectory(primitives, camera_trajectory, full_output, output_folder='primitives')
+
+	df = pd.DataFrame(data, index=name_index, columns=['mean', 'median', 'boxprim mean', 'boxprim median', 'baseline'])
+	df.to_csv(os.path.join(args.output, 'fit_distance.csv'))
+	print(df)
+
+	# compute agg statistics
+	print('-'*25)
+	print(df.mean(axis=0))
 
 
 if __name__ == '__main__': main()
